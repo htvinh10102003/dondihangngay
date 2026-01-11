@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xử Lý Đơn Hàng Excel</title>
+    <!-- Tailwind CSS để làm đẹp giao diện -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS để đọc và ghi file Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <!-- Font Awesome cho icon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .drag-active { border-color: #3b82f6; background-color: #eff6ff; }
+        /* Style cho ô trống mã vận đơn để nhìn sạch sẽ hơn */
+        .empty-code-cell { background-color: #f9fafb; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 md:p-8">
+
+    <div class="max-w-6xl mx-auto">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">XỬ LÝ BÁO CÁO ĐƠN ĐI - DEVELOPED BY HO TA VINH</h1>
+            <p class="text-gray-600">Gộp Mã Vận Đơn / ID và danh sách sản phẩm từ nhiều file Excel</p>
+        </div>
+
+        <!-- Upload Area -->
+        <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+            <div id="drop-zone" class="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer transition-all hover:border-blue-400 hover:bg-gray-50">
+                <i class="fa-solid fa-cloud-arrow-up text-4xl text-gray-400 mb-3"></i>
+                <p class="text-lg text-gray-700 font-medium">Kéo thả file Excel (.xlsx, .csv) vào đây</p>
+                <p class="text-sm text-gray-500 mt-1">hoặc nhấn để chọn file (Hỗ trợ chọn nhiều file)</p>
+                <input type="file" id="file-input" class="hidden" multiple accept=".xlsx, .xls, .csv">
+            </div>
+            
+            <!-- File List -->
+            <div id="file-list" class="mt-4 space-y-2 hidden">
+                <h3 class="font-semibold text-gray-700">Các file đã chọn:</h3>
+                <ul id="file-list-items" class="text-sm text-gray-600 list-disc list-inside"></ul>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="mt-6 flex justify-center gap-4">
+                <button id="process-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg shadow transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <i class="fa-solid fa-gears mr-2"></i> Xử Lý Dữ Liệu
+                </button>
+                <button id="export-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-6 rounded-lg shadow transition-colors hidden">
+                    <i class="fa-solid fa-file-excel mr-2"></i> Tải Kết Quả Excel
+                </button>
+            </div>
+        </div>
+
+        <!-- Result Area -->
+        <div id="result-area" class="bg-white rounded-xl shadow-md p-6 hidden">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Kết Quả (<span id="row-count">0</span> dòng)</h2>
+                <div class="space-x-2">
+                    <span class="text-sm text-gray-500 italic mr-2">*Mã đơn hàng trùng lặp sẽ được ẩn đi cho gọn</span>
+                    <button onclick="copyToClipboard()" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                        <i class="fa-regular fa-copy"></i> Copy bảng
+                    </button>
+                </div>
+            </div>
+            
+            <div class="overflow-x-auto border rounded-lg max-h-[600px] overflow-y-auto">
+                <table class="min-w-full divide-y divide-gray-200" id="result-table">
+                    <thead class="bg-gray-100 sticky top-0 z-10">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider w-16">STT</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider w-48">Mã Vận Đơn / ID</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Sản Phẩm</th>
+                            <th class="px-6 py-3 text-center text-xs font-bold text-gray-600 uppercase tracking-wider w-24">Số Lượng</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider w-32">Trạng Thái</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-400 uppercase tracking-wider w-32">Nguồn File</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200 text-sm text-gray-700" id="table-body">
+                        <!-- Data will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-lg shadow-xl flex flex-col items-center">
+            <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-3"></div>
+            <p class="text-gray-700 font-medium">Đang xử lý dữ liệu...</p>
+        </div>
+    </div>
+
+    <script>
+        // --- CẤU HÌNH TÊN CỘT ---
+        const COL_CONFIG = {
+            tracking: ["Mã vận đơn HVC", "Mã vận đơn", "Tracking Code"],
+            id: ["ID", "Mã đơn hàng", "Order ID"],
+            product: ["Sản phẩm", "Tên sản phẩm", "Product Name"],
+            quantity: ["Số lượng", "Qty"],
+            status: ["Tình trạng", "Trạng thái", "Status"]
+        };
+
+        let processedData = []; 
+        let filesToProcess = [];
+
+        // --- DOM ELEMENTS ---
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const fileList = document.getElementById('file-list');
+        const fileListItems = document.getElementById('file-list-items');
+        const processBtn = document.getElementById('process-btn');
+        const exportBtn = document.getElementById('export-btn');
+        const resultArea = document.getElementById('result-area');
+        const tableBody = document.getElementById('table-body');
+        const loading = document.getElementById('loading');
+        const rowCountSpan = document.getElementById('row-count');
+
+        // --- EVENTS ---
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-active');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-active');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-active');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        processBtn.addEventListener('click', processAllFiles);
+        exportBtn.addEventListener('click', exportToExcel);
+
+        // --- FUNCTIONS ---
+
+        function handleFiles(files) {
+            if (files.length > 0) {
+                filesToProcess = Array.from(files);
+                updateFileList();
+                processBtn.disabled = false;
+                resultArea.classList.add('hidden');
+                exportBtn.classList.add('hidden');
+            }
+        }
+
+        function updateFileList() {
+            fileList.classList.remove('hidden');
+            fileListItems.innerHTML = '';
+            filesToProcess.forEach(file => {
+                const li = document.createElement('li');
+                li.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+                fileListItems.appendChild(li);
+            });
+        }
+
+        function getValue(row, possibleHeaders) {
+            for (let header of possibleHeaders) {
+                if (row[header] !== undefined && row[header] !== null) {
+                    return row[header];
+                }
+            }
+            return null;
+        }
+
+        async function processAllFiles() {
+            loading.classList.remove('hidden');
+            processedData = []; 
+            tableBody.innerHTML = '';
+
+            try {
+                for (let file of filesToProcess) {
+                    const data = await readFile(file);
+                    processFileData(data, file.name);
+                }
+
+                renderTable();
+                resultArea.classList.remove('hidden');
+                exportBtn.classList.remove('hidden');
+                rowCountSpan.innerText = processedData.length;
+            } catch (error) {
+                alert("Lỗi khi đọc file: " + error.message);
+                console.error(error);
+            } finally {
+                loading.classList.add('hidden');
+            }
+        }
+
+        function readFile(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const json = XLSX.utils.sheet_to_json(worksheet, { defval: "" }); 
+                    resolve(json);
+                };
+                reader.onerror = reject;
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function processFileData(rawData, fileName) {
+            let lastValidCode = ""; 
+            
+            rawData.forEach(row => {
+                let rawTracking = getValue(row, COL_CONFIG.tracking);
+                let rawId = getValue(row, COL_CONFIG.id);
+                let product = getValue(row, COL_CONFIG.product);
+                let quantity = getValue(row, COL_CONFIG.quantity);
+                let status = getValue(row, COL_CONFIG.status);
+
+                if (!rawTracking && !rawId && !product) return;
+
+                let finalCode = "";
+                let strTracking = rawTracking ? String(rawTracking).trim() : "";
+                let strId = rawId ? String(rawId).trim() : "";
+
+                if (strTracking !== "") {
+                    finalCode = strTracking;
+                } else if (strId !== "") {
+                    finalCode = strId;
+                } else {
+                    finalCode = lastValidCode;
+                }
+
+                if (finalCode !== "") {
+                    lastValidCode = finalCode;
+                }
+
+                processedData.push({
+                    code: finalCode,
+                    product: product || "",
+                    quantity: quantity || 0,
+                    status: status || "",
+                    source: fileName
+                });
+            });
+        }
+
+        function renderTable() {
+            let html = '';
+            let lastRenderedCode = null;
+            let lastRenderedSource = null;
+
+            processedData.forEach((item, index) => {
+                // Logic kiểm tra xem có nên hiển thị mã không
+                // Hiện mã nếu: Mã khác mã dòng trước HOẶC nguồn file khác dòng trước
+                let showCode = true;
+                if (index > 0) {
+                    if (item.code === lastRenderedCode && item.source === lastRenderedSource) {
+                        showCode = false;
+                    }
+                }
+
+                // Cập nhật trạng thái
+                lastRenderedCode = item.code;
+                lastRenderedSource = item.source;
+
+                const displayCode = showCode ? item.code : "";
+                const codeCellClass = showCode ? "font-medium text-blue-600" : "empty-code-cell";
+
+                html += `
+                    <tr class="${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors">
+                        <td class="px-6 py-4 whitespace-nowrap text-gray-500">${index + 1}</td>
+                        <td class="px-6 py-4 whitespace-nowrap ${codeCellClass}">${displayCode}</td>
+                        <td class="px-6 py-4 text-gray-700">${item.product}</td>
+                        <td class="px-6 py-4 text-center text-gray-700">${item.quantity}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(item.status)}">
+                                ${item.status}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-400 italic">${item.source}</td>
+                    </tr>
+                `;
+            });
+            tableBody.innerHTML = html;
+        }
+
+        function getStatusColor(status) {
+            if (!status) return 'bg-gray-100 text-gray-800';
+            const s = status.toLowerCase();
+            if (s.includes('thành công') || s.includes('hoàn thành')) return 'bg-green-100 text-green-800';
+            if (s.includes('hủy') || s.includes('trả')) return 'bg-red-100 text-red-800';
+            if (s.includes('chuyển') || s.includes('giao')) return 'bg-yellow-100 text-yellow-800';
+            return 'bg-gray-100 text-gray-800';
+        }
+
+        function exportToExcel() {
+            if (processedData.length === 0) return;
+
+            let lastExportCode = null;
+            let lastExportSource = null;
+
+            // Map lại tên cột và xử lý ẩn mã trùng lặp
+            const dataToExport = processedData.map((item, index) => {
+                let showCode = true;
+                if (index > 0) {
+                    if (item.code === lastExportCode && item.source === lastExportSource) {
+                        showCode = false;
+                    }
+                }
+
+                lastExportCode = item.code;
+                lastExportSource = item.source;
+
+                return {
+                    "STT": index + 1,
+                    "Mã Vận Đơn / ID": showCode ? item.code : "", // Để trống nếu trùng
+                    "Sản Phẩm": item.product,
+                    "Số Lượng": item.quantity,
+                    "Trạng Thái": item.status,
+                    "Nguồn File": item.source
+                };
+            });
+
+            const ws = XLSX.utils.json_to_sheet(dataToExport);
+            
+            // Auto fit column width (cơ bản)
+            const wscols = [
+                {wch: 5},  // STT
+                {wch: 20}, // Code
+                {wch: 40}, // Product
+                {wch: 10}, // Qty
+                {wch: 15}, // Status
+                {wch: 15}  // Source
+            ];
+            ws['!cols'] = wscols;
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "DanhSachDonHang");
+
+            // Xuất file
+            XLSX.writeFile(wb, "Ket_Qua_Xu_Ly_Don_Hang.xlsx");
+        }
+
+        function copyToClipboard() {
+            const el = document.getElementById('result-table');
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            document.execCommand('copy');
+            alert("Đã copy bảng vào bộ nhớ tạm!");
+            sel.removeAllRanges();
+        }
+    </script>
+</body>
+</html>
